@@ -58,7 +58,7 @@ uint8_t *bht_tournament_global;
 uint64_t path_history;
 
 // custom
-uint64_t custom_path_history;
+__uint128_t custom_path_history;
 
 //------------------------------------//
 //        Predictor Functions         //
@@ -301,12 +301,12 @@ uint8_t custom_predict(uint32_t pc)
   uint32_t global_pc_lower_bits = pc & (bht_entries_global - 1);
   uint32_t path_history_lower_bits = custom_path_history & (bht_entries_global - 1);
   uint32_t path_history_folded = path_history_lower_bits;
-  for (int i = 1; i < 64 / custom_path_history_bits; i++) {
+  for (int i = 1; i < 128 / custom_path_history_bits; i++) {
     path_history_folded ^= (custom_path_history >> (i * custom_path_history_bits)) & (bht_entries_global - 1);
   }
 
   uint32_t chooser_path_history_folded = path_history_lower_bits;
-  for (int i = 1; i < 64 / custom_chooser_bits; i++) {
+  for (int i = 1; i < 128 / custom_chooser_bits; i++) {
     chooser_path_history_folded ^= (custom_path_history >> (i * custom_chooser_bits)) & (chooser_entries - 1);
   }
   uint32_t chooser_index = chooser_path_history_folded & (chooser_entries - 1);
@@ -348,12 +348,12 @@ void train_custom(uint32_t pc, uint8_t outcome)
   uint32_t global_pc_lower_bits = pc & (bht_entries_global - 1);
   uint32_t path_history_lower_bits = custom_path_history & (bht_entries_global - 1);
   uint32_t path_history_folded = path_history_lower_bits;
-  for (int i = 1; i < 64 / custom_path_history_bits; i++) {
+  for (int i = 1; i < 128 / custom_path_history_bits; i++) {
     path_history_folded ^= (custom_path_history >> (i * custom_path_history_bits)) & (bht_entries_global - 1);
   }
 
   uint32_t chooser_path_history_folded = path_history_lower_bits;
-  for (int i = 1; i < 64 / custom_chooser_bits; i++) {
+  for (int i = 1; i < 128 / custom_chooser_bits; i++) {
     chooser_path_history_folded ^= (custom_path_history >> (i * custom_chooser_bits)) & (chooser_entries - 1);
   }
   uint32_t chooser_index = chooser_path_history_folded & (chooser_entries - 1);
