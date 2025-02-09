@@ -28,6 +28,7 @@ const char *bpName[4] = {"Static", "Gshare",
 // define number of bits required for indexing the BHT here.
 int ghistoryBits = 17; // Number of bits used for Global History
 int path_history_bits = 15; // Number of bits used for Path History
+int chooser_bits = 15; // Number of bits used for Chooser
 int lhistoryBits = 15; // Number of bits used for Local History
 int pcIndexBits = 12;  // Number of bits used for PC index
 int bpType;            // Branch Prediction Type
@@ -46,7 +47,7 @@ uint64_t ghistory;
 
 // tournament
 uint8_t *bht_tournament_local;
-uint16_t *lht_tournament_local;
+uint32_t *lht_tournament_local;
 uint8_t *bht_chooser_tournament;
 uint8_t *bht_tournament_global;
 uint64_t path_history;
@@ -136,9 +137,10 @@ void init_tournament() {
   int bht_entries_local = 1 << lhistoryBits;
   int bht_entries_global = 1 << path_history_bits;
   int lht_entries = 1 << pcIndexBits;
+  int chooser_entries = 1 << chooser_bits;
   bht_tournament_local = (uint8_t *)calloc(bht_entries_local, sizeof(uint8_t));
-  lht_tournament_local = (uint16_t *)calloc(lht_entries, sizeof(uint16_t));
-  bht_chooser_tournament = (uint8_t *)calloc(bht_entries_global, sizeof(uint8_t));
+  lht_tournament_local = (uint32_t *)calloc(lht_entries, sizeof(uint32_t));
+  bht_chooser_tournament = (uint8_t *)calloc(chooser_entries, sizeof(uint8_t));
   bht_tournament_global = (uint8_t *)calloc(bht_entries_global, sizeof(uint8_t));
   for (int i = 0; i < bht_entries_local; i++)
   {
@@ -161,11 +163,13 @@ uint8_t tournament_predict(uint32_t pc)
   int bht_entries_local = 1 << lhistoryBits;
   int bht_entries_global = 1 << path_history_bits;
   int lht_entries = 1 << pcIndexBits;
+  int chooser_entries = 1 << chooser_bits;
   uint32_t pc_lower_bits = pc & (lht_entries - 1);
   uint32_t path_history_lower_bits = path_history & (bht_entries_global - 1);
-  uint8_t chooser_prediction = bht_chooser_tournament[path_history_lower_bits];
+  uint32_t chooser_index = path_history & (chooser_entries - 1);
+  uint8_t chooser_prediction = bht_chooser_tournament[chooser_index];
   if (chooser_prediction == ST || chooser_prediction == WT) {
-    uint16_t lht_entry = lht_tournament_local[pc_lower_bits] & (bht_entries_local - 1);
+    uint32_t lht_entry = lht_tournament_local[pc_lower_bits] & (bht_entries_local - 1);
     uint8_t prediction = bht_tournament_local[lht_entry];
     if (prediction == ST || prediction == WT)
       return TAKEN;
@@ -196,11 +200,13 @@ void train_tournament(uint32_t pc, uint8_t outcome)
   int bht_entries_local = 1 << lhistoryBits;
   int bht_entries_global = 1 << path_history_bits;
   int lht_entries = 1 << pcIndexBits;
+  int chooser_entries = 1 << chooser_bits;
   uint32_t pc_lower_bits = pc & (lht_entries - 1);
   uint32_t path_history_lower_bits = path_history & (bht_entries_global - 1);
-  uint8_t chooser_prediction = bht_chooser_tournament[path_history_lower_bits];
+  uint32_t chooser_index = path_history & (chooser_entries - 1);
+  uint8_t chooser_prediction = bht_chooser_tournament[chooser_index];
 
-  uint16_t lht_entry = lht_tournament_local[pc_lower_bits] & (bht_entries_local - 1);
+  uint32_t lht_entry = lht_tournament_local[pc_lower_bits] & (bht_entries_local - 1);
   uint8_t local_prediction = bht_tournament_local[lht_entry];
   uint8_t global_prediction = bht_tournament_global[path_history_lower_bits];
   
@@ -248,6 +254,7 @@ void train_tournament(uint32_t pc, uint8_t outcome)
   }
 
   path_history = ((path_history << 1) | outcome);
+  lht_tournament_local[pc_lower_bits] = ((lht_entry << 1) | outcome);
 }
 
 void init_predictor()
