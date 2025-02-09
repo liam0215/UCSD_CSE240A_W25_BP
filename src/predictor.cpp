@@ -34,6 +34,11 @@ int pcIndexBits = 12;  // Number of bits used for PC index
 int bpType;            // Branch Prediction Type
 int verbose;
 
+int custom_path_history_bits = 15; // Number of bits used for Path History
+int custom_chooser_bits = 15; // Number of bits used for Chooser
+int custom_lhistoryBits = 15; // Number of bits used for Local History
+int custom_pcIndexBits = 12;  // Number of bits used for PC index
+
 //------------------------------------//
 //      Predictor Data Structures     //
 //------------------------------------//
@@ -51,6 +56,9 @@ uint32_t *lht_tournament_local;
 uint8_t *bht_chooser_tournament;
 uint8_t *bht_tournament_global;
 uint64_t path_history;
+
+// custom
+uint64_t custom_path_history;
 
 //------------------------------------//
 //        Predictor Functions         //
@@ -259,10 +267,10 @@ void train_tournament(uint32_t pc, uint8_t outcome)
 
 // custom functions
 void init_custom() {
-  int bht_entries_local = 1 << lhistoryBits;
-  int bht_entries_global = 1 << path_history_bits;
-  int lht_entries = 1 << pcIndexBits;
-  int chooser_entries = 1 << chooser_bits;
+  int bht_entries_local = 1 << custom_lhistoryBits;
+  int bht_entries_global = 1 << custom_path_history_bits;
+  int lht_entries = 1 << custom_pcIndexBits;
+  int chooser_entries = 1 << custom_chooser_bits;
   bht_tournament_local = (uint8_t *)calloc(bht_entries_local, sizeof(uint8_t));
   lht_tournament_local = (uint32_t *)calloc(lht_entries, sizeof(uint32_t));
   bht_chooser_tournament = (uint8_t *)calloc(chooser_entries, sizeof(uint8_t));
@@ -280,19 +288,28 @@ void init_custom() {
     bht_chooser_tournament[i] = WN;
     bht_tournament_global[i] = WN;
   }
-  path_history = 0;
+  custom_path_history = 0;
 }
 
 uint8_t custom_predict(uint32_t pc)
 {
-  int bht_entries_local = 1 << lhistoryBits;
-  int bht_entries_global = 1 << path_history_bits;
-  int lht_entries = 1 << pcIndexBits;
-  int chooser_entries = 1 << chooser_bits;
+  int bht_entries_local = 1 << custom_lhistoryBits;
+  int bht_entries_global = 1 << custom_path_history_bits;
+  int lht_entries = 1 << custom_pcIndexBits;
+  int chooser_entries = 1 << custom_chooser_bits;
   uint32_t pc_lower_bits = pc & (lht_entries - 1);
   uint32_t global_pc_lower_bits = pc & (bht_entries_global - 1);
-  uint32_t path_history_lower_bits = path_history & (bht_entries_global - 1);
-  uint32_t chooser_index = path_history & (chooser_entries - 1);
+  uint32_t path_history_lower_bits = custom_path_history & (bht_entries_global - 1);
+  uint32_t path_history_folded = path_history_lower_bits;
+  for (int i = 1; i < 64 / custom_path_history_bits; i++) {
+    path_history_folded ^= (custom_path_history >> (i * custom_path_history_bits)) & (bht_entries_global - 1);
+  }
+
+  uint32_t chooser_path_history_folded = path_history_lower_bits;
+  for (int i = 1; i < 64 / custom_chooser_bits; i++) {
+    chooser_path_history_folded ^= (custom_path_history >> (i * custom_chooser_bits)) & (chooser_entries - 1);
+  }
+  uint32_t chooser_index = chooser_path_history_folded & (chooser_entries - 1);
   uint8_t chooser_prediction = bht_chooser_tournament[chooser_index];
   if (chooser_prediction == ST || chooser_prediction == WT) {
     uint32_t lht_entry = lht_tournament_local[pc_lower_bits] & (bht_entries_local - 1);
@@ -306,7 +323,7 @@ uint8_t custom_predict(uint32_t pc)
       exit(EXIT_FAILURE);
     }
   } else if (chooser_prediction == SN || chooser_prediction == WN) {
-    uint8_t prediction = bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits];
+    uint8_t prediction = bht_tournament_global[global_pc_lower_bits ^ path_history_folded];
     if (prediction == ST || prediction == WT)
       return TAKEN;
     else if (prediction == SN || prediction == WN)
@@ -323,31 +340,40 @@ uint8_t custom_predict(uint32_t pc)
 
 void train_custom(uint32_t pc, uint8_t outcome)
 {
-  int bht_entries_local = 1 << lhistoryBits;
-  int bht_entries_global = 1 << path_history_bits;
-  int lht_entries = 1 << pcIndexBits;
-  int chooser_entries = 1 << chooser_bits;
+  int bht_entries_local = 1 << custom_lhistoryBits;
+  int bht_entries_global = 1 << custom_path_history_bits;
+  int lht_entries = 1 << custom_pcIndexBits;
+  int chooser_entries = 1 << custom_chooser_bits;
   uint32_t pc_lower_bits = pc & (lht_entries - 1);
   uint32_t global_pc_lower_bits = pc & (bht_entries_global - 1);
-  uint32_t path_history_lower_bits = path_history & (bht_entries_global - 1);
-  uint32_t chooser_index = path_history & (chooser_entries - 1);
+  uint32_t path_history_lower_bits = custom_path_history & (bht_entries_global - 1);
+  uint32_t path_history_folded = path_history_lower_bits;
+  for (int i = 1; i < 64 / custom_path_history_bits; i++) {
+    path_history_folded ^= (custom_path_history >> (i * custom_path_history_bits)) & (bht_entries_global - 1);
+  }
+
+  uint32_t chooser_path_history_folded = path_history_lower_bits;
+  for (int i = 1; i < 64 / custom_chooser_bits; i++) {
+    chooser_path_history_folded ^= (custom_path_history >> (i * custom_chooser_bits)) & (chooser_entries - 1);
+  }
+  uint32_t chooser_index = chooser_path_history_folded & (chooser_entries - 1);
   uint8_t chooser_prediction = bht_chooser_tournament[chooser_index];
 
   uint32_t lht_entry = lht_tournament_local[pc_lower_bits] & (bht_entries_local - 1);
   uint8_t local_prediction = bht_tournament_local[lht_entry];
-  uint8_t global_prediction = bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits];
+  uint8_t global_prediction = bht_tournament_global[global_pc_lower_bits ^ path_history_folded];
   
   uint8_t local_prediction_dir = (local_prediction == ST || local_prediction == WT) ? TAKEN : NOTTAKEN;
   uint8_t global_prediction_dir = (global_prediction == ST || global_prediction == WT) ? TAKEN : NOTTAKEN;
   if (local_prediction_dir != global_prediction_dir) {
     if (chooser_prediction == ST)
-      bht_chooser_tournament[path_history_lower_bits] = (outcome == local_prediction_dir) ? ST : WT;
+      bht_chooser_tournament[path_history_folded] = (outcome == local_prediction_dir) ? ST : WT;
     else if (chooser_prediction == WT)
-      bht_chooser_tournament[path_history_lower_bits] = (outcome == local_prediction_dir) ? ST : WN;
+      bht_chooser_tournament[path_history_folded] = (outcome == local_prediction_dir) ? ST : WN;
     else if (chooser_prediction == WN)
-      bht_chooser_tournament[path_history_lower_bits] = (outcome == local_prediction_dir) ? WT : SN;
+      bht_chooser_tournament[path_history_folded] = (outcome == local_prediction_dir) ? WT : SN;
     else if (chooser_prediction == SN)
-      bht_chooser_tournament[path_history_lower_bits] = (outcome == local_prediction_dir) ? WN : SN;
+      bht_chooser_tournament[path_history_folded] = (outcome == local_prediction_dir) ? WN : SN;
     else {
       printf("Error: Undefined chooser prediction value!\n");
       exit(EXIT_FAILURE);
@@ -368,19 +394,19 @@ void train_custom(uint32_t pc, uint8_t outcome)
   }
 
   if (global_prediction == ST)
-    bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits] = (outcome == TAKEN) ? ST : WT;
+    bht_tournament_global[global_pc_lower_bits ^ path_history_folded] = (outcome == TAKEN) ? ST : WT;
   else if (global_prediction == WT)
-    bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits] = (outcome == TAKEN) ? ST : WN;
+    bht_tournament_global[global_pc_lower_bits ^ path_history_folded] = (outcome == TAKEN) ? ST : WN;
   else if (global_prediction == WN)
-    bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits] = (outcome == TAKEN) ? WT : SN;
+    bht_tournament_global[global_pc_lower_bits ^ path_history_folded] = (outcome == TAKEN) ? WT : SN;
   else if (global_prediction == SN)
-    bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits] = (outcome == TAKEN) ? WN : SN;
+    bht_tournament_global[global_pc_lower_bits ^ path_history_folded] = (outcome == TAKEN) ? WN : SN;
   else {
     printf("Error: Undefined prediction value!\n");
     exit(EXIT_FAILURE);
   }
 
-  path_history = ((path_history << 1) | outcome);
+  custom_path_history = ((custom_path_history << 1) | outcome);
   lht_tournament_local[pc_lower_bits] = ((lht_entry << 1) | outcome);
 }
 
