@@ -257,6 +257,133 @@ void train_tournament(uint32_t pc, uint8_t outcome)
   lht_tournament_local[pc_lower_bits] = ((lht_entry << 1) | outcome);
 }
 
+// custom functions
+void init_custom() {
+  int bht_entries_local = 1 << lhistoryBits;
+  int bht_entries_global = 1 << path_history_bits;
+  int lht_entries = 1 << pcIndexBits;
+  int chooser_entries = 1 << chooser_bits;
+  bht_tournament_local = (uint8_t *)calloc(bht_entries_local, sizeof(uint8_t));
+  lht_tournament_local = (uint32_t *)calloc(lht_entries, sizeof(uint32_t));
+  bht_chooser_tournament = (uint8_t *)calloc(chooser_entries, sizeof(uint8_t));
+  bht_tournament_global = (uint8_t *)calloc(bht_entries_global, sizeof(uint8_t));
+  for (int i = 0; i < bht_entries_local; i++)
+  {
+    bht_tournament_local[i] = WN;
+  }
+  for (int i = 0; i < lht_entries; i++)
+  {
+    lht_tournament_local[i] = 0;
+  }
+  for (int i = 0; i < bht_entries_global; i++)
+  {
+    bht_chooser_tournament[i] = WN;
+    bht_tournament_global[i] = WN;
+  }
+  path_history = 0;
+}
+
+uint8_t custom_predict(uint32_t pc)
+{
+  int bht_entries_local = 1 << lhistoryBits;
+  int bht_entries_global = 1 << path_history_bits;
+  int lht_entries = 1 << pcIndexBits;
+  int chooser_entries = 1 << chooser_bits;
+  uint32_t pc_lower_bits = pc & (lht_entries - 1);
+  uint32_t global_pc_lower_bits = pc & (bht_entries_global - 1);
+  uint32_t path_history_lower_bits = path_history & (bht_entries_global - 1);
+  uint32_t chooser_index = path_history & (chooser_entries - 1);
+  uint8_t chooser_prediction = bht_chooser_tournament[chooser_index];
+  if (chooser_prediction == ST || chooser_prediction == WT) {
+    uint32_t lht_entry = lht_tournament_local[pc_lower_bits] & (bht_entries_local - 1);
+    uint8_t prediction = bht_tournament_local[lht_entry];
+    if (prediction == ST || prediction == WT)
+      return TAKEN;
+    else if (prediction == SN || prediction == WN)
+      return NOTTAKEN;
+    else {
+      printf("Error: Undefined prediction value!\n");
+      exit(EXIT_FAILURE);
+    }
+  } else if (chooser_prediction == SN || chooser_prediction == WN) {
+    uint8_t prediction = bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits];
+    if (prediction == ST || prediction == WT)
+      return TAKEN;
+    else if (prediction == SN || prediction == WN)
+      return NOTTAKEN;
+    else {
+      printf("Error: Undefined prediction value!\n");
+      exit(EXIT_FAILURE);
+    }
+  } else {
+    printf("Error: Undefined chooser prediction value!\n");
+    exit(EXIT_FAILURE);
+  }
+}
+
+void train_custom(uint32_t pc, uint8_t outcome)
+{
+  int bht_entries_local = 1 << lhistoryBits;
+  int bht_entries_global = 1 << path_history_bits;
+  int lht_entries = 1 << pcIndexBits;
+  int chooser_entries = 1 << chooser_bits;
+  uint32_t pc_lower_bits = pc & (lht_entries - 1);
+  uint32_t global_pc_lower_bits = pc & (bht_entries_global - 1);
+  uint32_t path_history_lower_bits = path_history & (bht_entries_global - 1);
+  uint32_t chooser_index = path_history & (chooser_entries - 1);
+  uint8_t chooser_prediction = bht_chooser_tournament[chooser_index];
+
+  uint32_t lht_entry = lht_tournament_local[pc_lower_bits] & (bht_entries_local - 1);
+  uint8_t local_prediction = bht_tournament_local[lht_entry];
+  uint8_t global_prediction = bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits];
+  
+  uint8_t local_prediction_dir = (local_prediction == ST || local_prediction == WT) ? TAKEN : NOTTAKEN;
+  uint8_t global_prediction_dir = (global_prediction == ST || global_prediction == WT) ? TAKEN : NOTTAKEN;
+  if (local_prediction_dir != global_prediction_dir) {
+    if (chooser_prediction == ST)
+      bht_chooser_tournament[path_history_lower_bits] = (outcome == local_prediction_dir) ? ST : WT;
+    else if (chooser_prediction == WT)
+      bht_chooser_tournament[path_history_lower_bits] = (outcome == local_prediction_dir) ? ST : WN;
+    else if (chooser_prediction == WN)
+      bht_chooser_tournament[path_history_lower_bits] = (outcome == local_prediction_dir) ? WT : SN;
+    else if (chooser_prediction == SN)
+      bht_chooser_tournament[path_history_lower_bits] = (outcome == local_prediction_dir) ? WN : SN;
+    else {
+      printf("Error: Undefined chooser prediction value!\n");
+      exit(EXIT_FAILURE);
+    }
+  } 
+
+  if (local_prediction == ST)
+    bht_tournament_local[lht_entry] = (outcome == TAKEN) ? ST : WT;
+  else if (local_prediction == WT)
+    bht_tournament_local[lht_entry] = (outcome == TAKEN) ? ST : WN;
+  else if (local_prediction == WN)
+    bht_tournament_local[lht_entry] = (outcome == TAKEN) ? WT : SN;
+  else if (local_prediction == SN)
+    bht_tournament_local[lht_entry] = (outcome == TAKEN) ? WN : SN;
+  else {
+    printf("Error: Undefined prediction value!\n");
+    exit(EXIT_FAILURE);
+  }
+
+  if (global_prediction == ST)
+    bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits] = (outcome == TAKEN) ? ST : WT;
+  else if (global_prediction == WT)
+    bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits] = (outcome == TAKEN) ? ST : WN;
+  else if (global_prediction == WN)
+    bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits] = (outcome == TAKEN) ? WT : SN;
+  else if (global_prediction == SN)
+    bht_tournament_global[global_pc_lower_bits ^ path_history_lower_bits] = (outcome == TAKEN) ? WN : SN;
+  else {
+    printf("Error: Undefined prediction value!\n");
+    exit(EXIT_FAILURE);
+  }
+
+  path_history = ((path_history << 1) | outcome);
+  lht_tournament_local[pc_lower_bits] = ((lht_entry << 1) | outcome);
+}
+
 void init_predictor()
 {
   switch (bpType)
@@ -270,6 +397,7 @@ void init_predictor()
     init_tournament();
     break;
   case CUSTOM:
+    init_custom();
     break;
   default:
     break;
@@ -293,7 +421,7 @@ uint32_t make_prediction(uint32_t pc, uint32_t target, uint32_t direct)
   case TOURNAMENT:
     return tournament_predict(pc);
   case CUSTOM:
-    return NOTTAKEN;
+    return custom_predict(pc);
   default:
     break;
   }
@@ -320,7 +448,7 @@ void train_predictor(uint32_t pc, uint32_t target, uint32_t outcome, uint32_t co
     case TOURNAMENT:
       return train_tournament(pc, outcome);
     case CUSTOM:
-      return;
+      return train_custom(pc, outcome);
     default:
       break;
     }
